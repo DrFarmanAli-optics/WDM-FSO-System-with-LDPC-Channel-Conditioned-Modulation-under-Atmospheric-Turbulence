@@ -1,0 +1,39 @@
+function bitsEnc = ldpcEncode(bits, rate, profile)
+% Thin wrapper. Uses comm.LDPCEncoder if available; otherwise pass-through.
+if ~exist('comm.LDPCEncoder','class')
+    warning('LDPC toolbox not found; FEC disabled (pass-through).');
+    bitsEnc = bits; return;
+end
+
+switch lower(profile)
+    case {'802.11n','wlan'}
+        H = dvbs2ldpc(rate); % placeholder; replace with WLAN if you have matrix
+    case {'5g'}
+        H = ldpcQuasiCyclicMatrix(rate); % user-provided helper if available
+    otherwise
+        H = dvbs2ldpc(rate); % robust default
+end
+enc = comm.LDPCEncoder(H);
+pad = mod(-numel(bits), size(H,2)-size(H,1));
+bitsPad = [bits(:).' zeros(1,pad)];
+bitsEnc = step(enc, bitsPad.').';
+end
++fec/ldpcDecode.m
+function bitsHat = ldpcDecode(llr, rate, profile, maxIter)
+if nargin<4, maxIter = 30; end
+if ~exist('comm.LDPCDecoder','class')
+    % Hard decision fallback
+    bitsHat = llr<0; return;
+end
+switch lower(profile)
+    case {'802.11n','wlan'}
+        H = dvbs2ldpc(rate);
+    case {'5g'}
+        H = ldpcQuasiCyclicMatrix(rate);
+    otherwise
+        H = dvbs2ldpc(rate);
+end
+dec = comm.LDPCDecoder(H, 'MaximumIterationCount', maxIter, ...
+    'DecisionMethod','Soft decision', 'OutputValue','Information part');
+bitsHat = step(dec, llr(:)).';
+end
