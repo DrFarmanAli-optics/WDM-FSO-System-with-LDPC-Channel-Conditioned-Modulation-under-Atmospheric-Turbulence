@@ -1,0 +1,33 @@
++loss/geometryLoss.m
+function LdB = geometryLoss(txAper_m, rxAper_m, lambda_nm, d_km)
+% Geometric spreading/aperture coupling (Friis-like for optics)
+lambda = lambda_nm*1e-9; d = d_km*1e3;
+% Far-field diffraction-limited divergence ~ 1.22*lambda/Dtx; spot > Drx
+theta = 1.22*lambda/txAper_m;
+spot = theta*d;
+capture = min(1, (rxAper_m/2)^2 / ( (spot/2)^2 )); % area ratio approx
+LdB = -10*log10(capture);
+end
++loss/rainITU_P838.m
+function LdB = rainITU_P838(rate_mmph, lambda_nm, d_km)
+% ITU-R P.838 specific attenuation: gammaR = k R^alpha (dB/km)
+% k, alpha depend on frequency (approx via 1550nm ~ 193.5 THz -> use high-freq optics proxy)
+% For optical, empirical fits are used; here adopt common near-IR fit:
+R = max(rate_mmph, 0);
+k = 1.076; alpha = 0.67; % literature-based optical fit at 1550 nm
+gammaR = k * R.^alpha;   % dB/km
+LdB = gammaR .* d_km;
+end
++loss/fogITU_P840.m
+function LdB = fogITU_P840(visibility_km, lambda_nm, d_km)
+% ITU-R P.840/Kim model: gamma = (3.912/Vis) * (lambda/0.55um)^(-q)
+Vis = max(visibility_km, 0.05);
+lambda_um = lambda_nm/1000;
+if Vis > 50, q = 1.6;
+elseif Vis >= 6, q = 1.3;
+elseif Vis >= 1, q = 0.16*Vis + 0.34;
+else, q = Vis - 0.5;
+end
+gamma = (3.912/Vis) * (lambda_um/0.55)^(-q); % dB/km
+LdB = gamma * d_km;
+end
