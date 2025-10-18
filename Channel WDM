@@ -1,0 +1,14 @@
+function powerW = wdmMixer(numCh, perChPowerW)
+% Simple aggregator: sums optical power from channels
+if isscalar(perChPowerW), perChPowerW = repmat(perChPowerW,1,numCh); end
+powerW = sum(perChPowerW);
+end
++chan/addAwgnSNR.m
+function y = addAwgnSNR(x, SNRdB)
+% Adds complex AWGN to achieve target SNR per symbol
+SNR = 10.^(SNRdB/10);
+Px = mean(abs(x).^2);
+N0 = Px./SNR;
+n = sqrt(N0/2) * (randn(size(x))+1j*randn(size(x)));
+y = x + n;
+end
