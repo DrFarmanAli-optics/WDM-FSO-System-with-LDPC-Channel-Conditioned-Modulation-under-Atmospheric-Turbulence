@@ -1,0 +1,44 @@
+function syms = mqamGrayMap(bits, M)
+% Map bits -> Gray-coded M-QAM symbols (unit average power)
+k = log2(M);
+assert(mod(numel(bits),k)==0, 'Bit length not multiple of log2(M).');
+
+% PAM Gray for I and Q
+m = sqrt(M); assert(m==round(m),'M must be square.');
+bits = reshape(bits, k, []).';
+iBits = bits(:,1:k/2); qBits = bits(:,k/2+1:end);
+iIdx = bi2de(bitxor(iBits, floor(iBits/2), 'left-msb'),'left-msb');
+qIdx = bi2de(bitxor(qBits, floor(qBits/2), 'left-msb'),'left-msb');
+
+pam = (2*(0:m-1)- (m-1));                     % {-(m-1),...,(m-1)} step 2
+I = pam(iIdx+1); Q = pam(qIdx+1);
+syms = (I + 1j*Q)/sqrt(2/3*(M-1));            % normalize
+end
++mod/mqamGrayDemap.m
+function bitsHat = mqamGrayDemap(syms, M)
+% Min-distance hard demap -> Gray bits
+k = log2(M); m = sqrt(M);
+pam = (2*(0:m-1)- (m-1)); pam = pam/sqrt(2/3*(M-1));
+[Igrid,Qgrid] = meshgrid(pam,pam);
+const = Igrid(:) + 1j*Qgrid(:);
+
+[~,idx] = min(abs(syms(:)-const.'),[],2);
+iIdx = mod(idx-1,m); qIdx = floor((idx-1)/m);
+
+iBin = de2bi(iIdx, k/2, 'left-msb');
+qBin = de2bi(qIdx, k/2, 'left-msb');
+
+% Inverse Gray
+iGray = iBin; qGray = qBin;
+iBits = zeros(size(iGray)); qBits = zeros(size(qGray));
+for d=1:k/2
+    if d==1
+        iBits(:,d)=iGray(:,d); qBits(:,d)=qGray(:,d);
+    else
+        iBits(:,d)=xor(iBits(:,d-1), iGray(:,d));
+        qBits(:,d)=xor(qBits(:,d-1), qGray(:,d));
+    end
+end
+bitsHat = [iBits qBits].';
+bitsHat = bitsHat(:).';
+end
