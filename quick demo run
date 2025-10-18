@@ -1,0 +1,77 @@
+% main.m
+clc; clear; close all;
+
+C = cfg.defaultConfig();
+
+% Single run at nominal weather to sanity-check chain
+results = link.simulateFSOLink(C);
+
+fprintf('M=%d, Rrain=%.1f mm/h, Cn2=%.1e => BER=%.3e, SNR=%.1f dB\n', ...
+    C.mod.M, C.weather.rainRate, C.turb.Cn2, results.BER, results.SNRdB);
+
+% Example sweep
+addpath scripts; 
+scripts.ber_vs_rain;   % produces BER vs rain plot & saves CSV/PNG
+________________________________________
++cfg/defaultConfig.m
+function C = defaultConfig()
+% Default configuration for WDM-FSO LDPC link
+
+% WDM
+C.wdm.lambda_nm = [1545 1550 1555 1560];   % 4-channel WDM (nm)
+C.wdm.spacingGHz = 50;                     % nominal info only
+C.wdm.symbolsPerChan = 1e5;                % per-channel symbols
+
+% Modulation
+C.mod.M = 16;                              % M-QAM (Gray)
+C.mod.symRate = 1e9;                       % 1 Gsym/s per channel
+C.mod.rolloff = 0.25;                      % not used in base sim (NRZ)
+
+% FEC (LDPC)
+C.fec.enabled = true;
+C.fec.rate = 0.8;                          % code rate (nominal)
+C.fec.parityCheck = '802.11n';             % or '5g' if you prefer
+
+% Link geometry
+C.link.txRxDist_km = 2.0;
+C.link.txAperture_m = 0.05;
+C.link.rxAperture_m = 0.10;
+C.link.lambda0_nm = 1550;
+C.link.optEff = 0.7;                       % optics throughput (lenses etc.)
+C.link.rxResponsivity_AW = 0.9;            % photodiode responsivity
+
+% Weather / channel
+C.weather.rainRate = 10;                   % mm/h
+C.weather.visibility_km = 5;               % fog/haze visibility (km)
+C.turb.alpha = 4; C.turb.beta = 2;         % Gamma-Gamma shape (weak-mod)
+C.turb.Cn2 = 1e-14;                        % refractive-index structure param
+
+% Noise
+C.noise.Bn = 0.5e9;                        % electrical noise BW (Hz)
+C.noise.N0 = (1.38e-23*300);               % kT (W/Hz) -> used for AWGN equiv
+
+% Receiver
+C.rx.loadOhm = 50;
+C.rx.thermalNoisePSD = C.noise.N0;         % simple thermal model
+C.rx.shotFactor = 2*1.602e-19;             % 2q
+
+% Simulation controls
+C.sim.seed = 42;
+C.sim.verbose = true;
+C.sim.savePlots = true;
+C.sim.outDir = "outputs";
+
+if ~exist(C.sim.outDir,'dir'); mkdir(C.sim.outDir); end
+end
+________________________________________
+Core utilities
++util/ber.m
+function b = ber(bitsTx, bitsRx)
+b = sum(bitsTx ~= bitsRx) / numel(bitsTx);
+end
++util/saveFigure.m
+function saveFigure(h, filepathBase)
+set(h, 'Color', 'w');
+exportgraphics(h, filepathBase + ".png", 'Resolution', 300);
+writematrix([], filepathBase + ".csv"); % placeholder so path exists in git
+end
