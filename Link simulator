@@ -1,0 +1,86 @@
+function R = simulateFSOLink(C)
+rng(C.sim.seed);
+
+k = log2(C.mod.M);
+Nbits = C.wdm.symbolsPerChan * k;
+
+% --- TX bits (per channel) ---
+bitsTX = randi([0 1], numel(C.wdm.lambda_nm), Nbits);
+
+% --- (Optional) LDPC encode ---
+if C.fec.enabled
+    bitsFEC = cellfun(@(b) fec.ldpcEncode(b, C.fec.rate, C.fec.parityCheck), ...
+        num2cell(bitsTX,2), 'uni',0);
+else
+    bitsFEC = num2cell(bitsTX,2);
+end
+
+% --- Modulate & assemble channels ---
+symsCh = cell(numel(bitsFEC),1);
+for c = 1:numel(bitsFEC)
+    symsCh{c} = mod.mqamGrayMap(bitsFEC{c}, C.mod.M).';
+end
+
+% Optical launch power per symbol (normalize to 1 W avg optical for demo)
+Pch_W = 1/numel(symsCh);
+Ptot_W = chan.wdmMixer(numel(symsCh), Pch_W);
+
+% --- Path loss ---
+Lgeom_dB = loss.geometryLoss(C.link.txAperture_m, C.link.rxAperture_m, ...
+                 C.link.lambda0_nm, C.link.txRxDist_km);
+Lrain_dB = loss.rainITU_P838(C.weather.rainRate, C.link.lambda0_nm, C.link.txRxDist_km);
+Lfog_dB  = loss.fogITU_P840(C.weather.visibility_km, C.link.lambda0_nm, C.link.txRxDist_km);
+Lsys_dB  = -10*log10(C.link.optEff);
+Ltot_dB  = Lgeom_dB + Lrain_dB + Lfog_dB + Lsys_dB;
+
+Glin = 10.^(-Ltot_dB/10);
+
+% --- Turbulence (Gamma-Gamma irradiance) ---
+I = turb.gammaGammaFading(numel(symsCh{1}), C.turb.alpha, C.turb.beta);
+
+% --- Electrical receive signal per channel ---
+yCh = cell(size(symsCh));
+for c=1:numel(symsCh)
+    % Intensity modulation/direct detection approximation:
+    rxOptPower = Pch_W * Glin * I;                         % W
+    rxCurrent  = C.link.rxResponsivity_AW * rxOptPower;    % A
+    % Normalize constellation to rxCurrent amplitude
+    yCh{c} = symsCh{c} .* sqrt(rxCurrent / mean(abs(symsCh{c}).^2));
+end
+
+% --- Add AWGN based on thermal+shot noise (SNR estimate) ---
+% Effective SNR (simplified): SNR = Ps/ (N0*Bn)
+Ps = mean(abs(yCh{1}).^2);
+N0 = C.rx.thermalNoisePSD + C.rx.shotFactor * C.link.rxResponsivity_AW*Ptot_W*Glin;
+SNR = Ps / (N0 * C.noise.Bn);
+SNRdB = 10*log10(SNR);
+for c=1:numel(yCh)
+    yCh{c} = chan.addAwgnSNR(yCh{c}, SNRdB);
+end
+
+% --- Demap & (optional) LDPC decode ---
+bitsRX = zeros(size(bitsTX));
+for c=1:numel(yCh)
+    bitsHd = mod.mqamGrayDemap(yCh{c}, C.mod.M);
+    if C.fec.enabled
+        % Convert hard decisions to LLRs for LDPC (simple +/- mapping)
+        llr = (1 - 2*bitsHd)*8; % strong confidence for demo
+        bhat = fec.ldpcDecode(llr, C.fec.rate, C.fec.parityCheck, 20);
+    else
+        bhat = bitsHd;
+    end
+    % Trim to original length
+    bitsRX(c,:) = bhat(1:size(bitsTX,2));
+end
+
+% --- Metrics ---
+BER = util.ber(bitsTX(:), bitsRX(:));
+R.BER   = BER;
+R.SNRdB = SNRdB;
+R.loss_dB = struct('geom',Lgeom_dB,'rain',Lrain_dB,'fog',Lfog_dB,'sys',Lsys_dB,'total',Ltot_dB);
+
+if C.sim.verbose
+    fprintf('Loss(dB): geom=%.1f rain=%.1f fog=%.1f sys=%.1f  | total=%.1f\n', ...
+        Lgeom_dB, Lrain_dB, Lfog_dB, Lsys_dB, Ltot_dB);
+end
+end
