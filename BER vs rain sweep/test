@@ -1,0 +1,30 @@
+^BER vs rain sweep
+scripts/ber_vs_rain.m
+function ber_vs_rain
+C = cfg.defaultConfig();
+rates = [0 5 10 15 20 25];  % mm/h
+BERs = zeros(size(rates)); SNRs = zeros(size(rates));
+for i=1:numel(rates)
+    C.weather.rainRate = rates(i);
+    R = link.simulateFSOLink(C);
+    BERs(i)=R.BER; SNRs(i)=R.SNRdB;
+end
+T = table(rates.', BERs.', SNRs.', 'VariableNames',{'Rain_mmph','BER','SNR_dB'});
+disp(T);
+writetable(T, fullfile(C.sim.outDir, 'ber_vs_rain.csv'));
+
+f1 = figure; semilogy(rates, BERs, '-o','LineWidth',1.5);
+grid on; xlabel('Rain rate (mm/h)'); ylabel('BER');
+title('BER vs Rain (WDM-FSO, Gray M-QAM + LDPC)');
+util.saveFigure(f1, fullfile(C.sim.outDir,'ber_vs_rain'));
+end
+________________________________________
+%test
+tests/test_basic.m
+function test_basic
+C = cfg.defaultConfig(); C.sim.verbose=false; C.wdm.symbolsPerChan=2e4;
+R = link.simulateFSOLink(C);
+assert(isfinite(R.BER) && R.BER>=0 && R.BER<=1);
+fprintf('Test OK. BER=%.2e SNR=%.1f dB\n', R.BER, R.SNRdB);
+end
+
