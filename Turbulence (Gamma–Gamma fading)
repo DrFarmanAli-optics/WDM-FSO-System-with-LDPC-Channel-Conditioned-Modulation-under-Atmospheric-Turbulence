@@ -1,0 +1,6 @@
+function I = gammaGammaFading(N, alpha, beta)
+% Samples irradiance I ~ Gamma-Gamma(alpha, beta), mean 1
+Xa = gamrnd(alpha, 1/alpha, [N,1]);  % large-scale
+Xb = gamrnd(beta , 1/beta , [N,1]);  % small-scale
+I = Xa .* Xb;
+end
